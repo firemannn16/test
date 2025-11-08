@@ -26,6 +26,10 @@
     .modal h2 { margin-top:0; }
     .modal p { margin:8px 0; }
     .modal .correct { direction: rtl; font-size:1.4em; font-weight:600; margin:10px 0; }
+    /* suggestions bar */
+    #suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; min-height: 30px; }
+    #suggestions span { padding: 4px 8px; background: #e0e0e0; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+    #suggestions span:hover { background: #d0d0d0; }
   </style>
 </head>
 <body>
@@ -45,6 +49,7 @@
     <div id="progress" class="small"></div>
     <div id="arabicWord"></div>
     <input id="userInput" type="text" placeholder="Введите перевод на русском">
+    <div id="suggestions"></div>
     <br>
     <button id="submitBtn">Ответить</button>
     <h3>Правильно:</h3>
@@ -190,6 +195,7 @@
     updateProgress();
     document.getElementById('userInput').value = '';
     document.getElementById('userInput').focus();
+    updateSuggestions(); // Init suggestions (empty)
     return w;
   }
   // ====== Завершение / прогресс ======
@@ -326,6 +332,26 @@
       if (!orderRaw || orderRaw.length === 0) finishSession(); else nextWord();
     });
   }
+  // ====== NEW: Update suggestions based on input ======
+  function updateSuggestions() {
+    const sugDiv = document.getElementById('suggestions');
+    sugDiv.innerHTML = '';
+    if (!currentRaw) return;
+    const w = words.find(w => w.rawLine === currentRaw);
+    if (!w || !w.ruVariants || !w.ruVariants.length) return;
+    const input = normalizeRu(document.getElementById('userInput').value);
+    if (!input) return; // No suggestions if nothing typed
+    const suggestions = w.ruVariants.filter(v => normalizeRu(v).startsWith(input));
+    suggestions.forEach(sug => {
+      const span = document.createElement('span');
+      span.textContent = sug;
+      span.addEventListener('click', () => {
+        document.getElementById('userInput').value = sug;
+        checkAnswer(); // Auto-submit on click
+      });
+      sugDiv.appendChild(span);
+    });
+  }
   // ====== Добавить новые слова (только по кнопке) ======
   async function addNewWords() {
     try {
@@ -348,8 +374,6 @@
       alert('Не удалось загрузить words.txt: ' + err);
     }
   }
-  // ====== Сброс прогресса (полный) ======
-  // Теперь вызывается через модал showResetModal
   // ====== Копирование ошибок ======
   function copyTextToClipboard(text, msg) {
     if (!text) { alert('Нет данных для копирования.'); return; }
@@ -366,30 +390,30 @@
       const serverWords = serverLines.map(l => parseLine(l));
       // load saved state if exists
       const st = loadState();
-     
+    
       if (st && Array.isArray(st.wordsList) && st.wordsList.length) {
         // Восстанавливаем words из сохраненных rawLine
         words = st.wordsList.map(raw => {
           const parsed = parseLine(raw);
           return { rawLine: raw, ...parsed };
         });
-       
+      
         // Мапы для поиска
         const serverRawSet = new Set(serverLines);
-       
+      
         // 1. Удаленные слова - убираем из words и всех списков
         words = words.filter(w => serverRawSet.has(w.rawLine));
-       
+      
         orderRaw = (Array.isArray(st.orderRaw) ? st.orderRaw.filter(r => serverRawSet.has(r)) : []);
         mistakes = (Array.isArray(st.mistakes) ? st.mistakes.filter(r => serverRawSet.has(r)) : []);
         correctLines = (Array.isArray(st.correctLines) ? st.correctLines.filter(r => serverRawSet.has(r)) : []);
         currentRaw = (st.currentRaw && serverRawSet.has(st.currentRaw)) ? st.currentRaw : null;
         mode = st.mode || 'all';
-       
+      
         // 2. Измененные слова - обновляем в words и сбрасываем прогресс
         const serverByRaw = new Map(serverWords.map(w => [w.rawLine, w]));
         const changedWords = [];
-       
+      
         words.forEach((existingWord, index) => {
           const serverWord = serverByRaw.get(existingWord.rawLine);
           if (serverWord && getWordContentHash(existingWord) !== getWordContentHash(serverWord)) {
@@ -398,7 +422,7 @@
             changedWords.push(serverWord.rawLine);
           }
         });
-       
+      
         // Сбрасываем прогресс для измененных: убираем из correct/mistakes, добавляем в начало orderRaw
         changedWords.forEach(rawLine => {
           correctLines = correctLines.filter(r => r !== rawLine);
@@ -407,24 +431,24 @@
             orderRaw.unshift(rawLine); // В начало очереди
           }
         });
-       
+      
         // НЕ добавляем новые слова автоматически
-       
+      
       } else {
         // Fresh init - добавляем все слова с сервера
         words = serverWords.slice();
         prepareOrder('all');
       }
-     
+    
       document.getElementById('mistake-list').value = mistakes.join('\n');
       document.getElementById('correct-list').value = correctLines.join('\n');
-     
+    
       // Показываем intro, пользователь кликнет "Я сделал дуа"
       document.getElementById('intro').classList.remove('hidden');
       document.getElementById('main').classList.add('hidden');
       updateProgress();
       saveState();
-     
+    
     } catch (err) {
       document.getElementById('arabicWord').textContent = 'Не удалось загрузить words.txt: ' + err;
       console.error(err);
@@ -446,6 +470,7 @@
   });
   document.getElementById('submitBtn').addEventListener('click', checkAnswer);
   document.getElementById('userInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkAnswer(); }});
+  document.getElementById('userInput').addEventListener('input', updateSuggestions); // NEW: Update suggestions on typing
   document.getElementById('copyMistakesBtn').addEventListener('click', () => { copyTextToClipboard(mistakes.join('\n'), 'Ошибки скопированы'); });
   document.getElementById('startMistakesBtn').addEventListener('click', () => {
     if (!mistakes.length) return;

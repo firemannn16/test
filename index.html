@@ -26,10 +26,6 @@
     .modal h2 { margin-top:0; }
     .modal p { margin:8px 0; }
     .modal .correct { direction: rtl; font-size:1.4em; font-weight:600; margin:10px 0; }
-    /* suggestions bar */
-    #suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; min-height: 30px; }
-    #suggestions span { padding: 4px 8px; background: #e0e0e0; border-radius: 4px; cursor: pointer; font-size: 1rem; }
-    #suggestions span:hover { background: #d0d0d0; }
   </style>
 </head>
 <body>
@@ -48,8 +44,7 @@
     <h1>Арабский тренажёр</h1>
     <div id="progress" class="small"></div>
     <div id="arabicWord"></div>
-    <input id="userInput" type="text" placeholder="Введите перевод на русском" autocorrect="on" spellcheck="true" autocomplete="on">
-    <div id="suggestions"></div>
+    <input id="userInput" type="text" placeholder="Введите перевод на русском" autocorrect="off" spellcheck="false" autocomplete="off">
     <br>
     <button id="submitBtn">Ответить</button>
     <h3>Правильно:</h3>
@@ -194,7 +189,6 @@
     updateProgress();
     document.getElementById('userInput').value = '';
     document.getElementById('userInput').focus();
-    updateSuggestions(); // Init suggestions (empty)
     return w;
   }
   // ====== Завершение / прогресс ======
@@ -331,26 +325,6 @@
       if (!orderRaw || orderRaw.length === 0) finishSession(); else nextWord();
     });
   }
-  // ====== NEW: Update suggestions based on input ======
-  function updateSuggestions() {
-    const sugDiv = document.getElementById('suggestions');
-    sugDiv.innerHTML = '';
-    if (!currentRaw) return;
-    const w = words.find(w => w.rawLine === currentRaw);
-    if (!w || !w.ruVariants || !w.ruVariants.length) return;
-    const input = normalizeRu(document.getElementById('userInput').value);
-    if (!input) return; // No suggestions if nothing typed
-    const suggestions = w.ruVariants.filter(v => normalizeRu(v).startsWith(input));
-    suggestions.forEach(sug => {
-      const span = document.createElement('span');
-      span.textContent = sug;
-      span.addEventListener('click', () => {
-        document.getElementById('userInput').value = sug;
-        checkAnswer(); // Auto-submit on click
-      });
-      sugDiv.appendChild(span);
-    });
-  }
   // ====== Добавить новые слова (только по кнопке) ======
   async function addNewWords() {
     try {
@@ -469,7 +443,6 @@
   });
   document.getElementById('submitBtn').addEventListener('click', checkAnswer);
   document.getElementById('userInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkAnswer(); }});
-  document.getElementById('userInput').addEventListener('input', updateSuggestions); // NEW: Update suggestions on typing
   document.getElementById('copyMistakesBtn').addEventListener('click', () => { copyTextToClipboard(mistakes.join('\n'), 'Ошибки скопированы'); });
   document.getElementById('startMistakesBtn').addEventListener('click', () => {
     if (!mistakes.length) return;

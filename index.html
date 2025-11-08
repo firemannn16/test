@@ -48,7 +48,7 @@
     <h1>Арабский тренажёр</h1>
     <div id="progress" class="small"></div>
     <div id="arabicWord"></div>
-    <input id="userInput" type="text" placeholder="Введите перевод на русском">
+    <input id="userInput" type="text" placeholder="Введите перевод на русском" autocorrect="on" spellcheck="true" autocomplete="on">
     <div id="suggestions"></div>
     <br>
     <button id="submitBtn">Ответить</button>
@@ -188,7 +188,6 @@
     saveState();
     const w = words.find(w => w.rawLine === raw) || { rawLine: raw, ruVariants: [], arFull: raw };
     if (!w.arFull || !w.arFull.trim()) {
-      // логируем в консоль: позволит быстро выяснить "нет арабского формата"
       console.warn('No arabic format for', raw, w);
     }
     document.getElementById('arabicWord').textContent = w.arFull || w.rawLine;

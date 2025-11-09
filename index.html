@@ -113,23 +113,28 @@
     return false;
   }
 
-  // ====== ИСПРАВЛЕННАЯ ФУНКЦИЯ: Сброс состояния ввода для iOS БЕЗ скрытия клавиатуры ======
+  // ====== ИСПРАВЛЕННАЯ ФУНКЦИЯ: Сброс контекста T9 БЕЗ скрытия клавиатуры ======
   function resetInputForIOS() {
     const input = document.getElementById('userInput');
     if (!input) return;
     
+    // Сохраняем текущий тип
+    const originalType = input.type;
+    
     // Очищаем поле
     input.value = '';
     
-    // Программно вставляем пробел и сразу удаляем его
-    // Это помогает iOS понять, что слово завершено, но клавиатура остается видимой
-    setTimeout(() => {
-      // Вставляем пробел
-      input.value = ' ';
-      input.setSelectionRange(1, 1);
-      
-      // Сразу удаляем пробел
+    // Временно меняем тип на 'search' для сброса контекста T9
+    // Это заставляет iOS сбросить контекст автозамены, но клавиатура остается видимой
+    input.type = 'search';
+    
+    // Используем requestAnimationFrame для более плавного перехода
+    requestAnimationFrame(() => {
       setTimeout(() => {
+        // Возвращаем тип обратно
+        input.type = originalType;
+        
+        // Убеждаемся, что поле пустое
         input.value = '';
         input.setSelectionRange(0, 0);
         
@@ -137,8 +142,8 @@
         if (document.activeElement !== input) {
           input.focus();
         }
-      }, 10);
-    }, 10);
+      }, 30);
+    });
   }
 
   // ====== Сохранение/восстановление состояния ======
@@ -223,7 +228,7 @@
     document.getElementById('arabicWord').textContent = w.arFull || w.rawLine;
     updateProgress();
     
-    // ИСПРАВЛЕНИЕ: Используем функцию сброса для iOS (клавиатура остается видимой)
+    // ИСПРАВЛЕНИЕ: Используем функцию сброса для iOS (клавиатура остается видимой, T9 сбрасывается)
     resetInputForIOS();
     
     return w;

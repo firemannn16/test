@@ -6,13 +6,16 @@
   <title>Арабский тренажёр</title>
   <script defer src="https://cloud.umami.is/script.js" data-website-id="a21e0a1b-d541-42d5-a46a-593c803caf8d"></script>
   <style>
+    /* ---- Основные стили ---- */
+    html,body { -webkit-text-size-adjust: 100%; } /* блокирует нежелательный авто-зум iOS */
     body { font-family: Arial, sans-serif; padding: 20px; max-width:900px; margin:auto; }
     #intro { background: #fff; padding:16px; border-radius:8px; border:1px solid #ddd; margin-bottom:16px; }
     #dua { direction: rtl; font-size:2em; margin:12px 0; font-weight:600; }
     #arabicWord { font-size:2rem; direction: rtl; margin:20px 0 12px 0; font-weight:600; text-align:center; }
-    input[type="text"]{ width:100%; padding:8px; font-size:1rem; box-sizing:border-box; }
+    /* ВАЖНО: font-size >= 16px чтобы iOS не зумил при фокусе */
+    input[type="text"], textarea { width:100%; padding:8px; box-sizing:border-box; font-size:16px; }
     button{ padding:8px 12px; margin-top:8px; }
-    textarea { width:100%; box-sizing:border-box; padding:8px; font-size:0.95rem; resize:vertical; }
+    textarea { resize:vertical; font-size:16px; }
     #correct-list { min-height:60px; font-weight:700; background:#fffdf5; border:1px solid #e0d7c2; }
     #mistake-list { min-height:120px; font-weight:400; background:#f9f9f9; border:1px solid #ddd; }
     .btn-row { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
@@ -26,6 +29,8 @@
     .modal h2 { margin-top:0; }
     .modal p { margin:8px 0; }
     .modal .correct { direction: rtl; font-size:1.4em; font-weight:600; margin:10px 0; }
+    /* небольшая дополнительная безопасность — не использовать transform на контейнерах вокруг input */
+    /* Если вы где-то используете transform на родителях поля ввода — это может ломать позиционирование подсказок iOS */
   </style>
 </head>
 <body>
@@ -44,7 +49,9 @@
     <h1>Арабский тренажёр</h1>
     <div id="progress" class="small"></div>
     <div id="arabicWord" lang="ar"></div>
-    <input id="userInput" type="text" placeholder="Введите перевод на русском" lang="ru" autocorrect="on" spellcheck="true" autocomplete="on">
+    <!-- ВАЖНО: включены autocorrect и spellcheck, отключено autocomplete (чтобы Safari не подставлял прошлые фразы формы) -->
+    <input id="userInput" type="text" placeholder="Введите перевод на русском" lang="ru"
+           autocorrect="on" spellcheck="true" autocomplete="off" autocapitalize="off" inputmode="text">
     <br>
     <button id="submitBtn">Ответить</button>
     <h3>Правильно:</h3>
@@ -187,8 +194,10 @@
     }
     document.getElementById('arabicWord').textContent = w.arFull || w.rawLine;
     updateProgress();
-    document.getElementById('userInput').value = '';
-    document.getElementById('userInput').focus();
+    // НЕ менять value в процессе набора (это могло ломать подсказки), мы ОЧИЩАЕМ поле только при показе нового слова:
+    const inputEl = document.getElementById('userInput');
+    inputEl.value = '';
+    inputEl.focus();
     return w;
   }
   // ====== Завершение / прогресс ======
@@ -442,7 +451,25 @@
     }
   });
   document.getElementById('submitBtn').addEventListener('click', checkAnswer);
-  document.getElementById('userInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkAnswer(); }});
+
+  // ====== ВАЖНО: обработка IME/composition чтобы не мешать подсказкам клавиатуры ======
+  const userInput = document.getElementById('userInput');
+  let composing = false;
+  userInput.addEventListener('compositionstart', () => composing = true);
+  userInput.addEventListener('compositionend', () => { composing = false; });
+
+  // Enter: если сейчас составление (composing) — не отправляем, иначе отправляем
+  userInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      if (composing) {
+        // Позволяем IME завершить выбор подсказки
+        return;
+      }
+      e.preventDefault();
+      checkAnswer();
+    }
+  });
+
   document.getElementById('copyMistakesBtn').addEventListener('click', () => { copyTextToClipboard(mistakes.join('\n'), 'Ошибки скопированы'); });
   document.getElementById('startMistakesBtn').addEventListener('click', () => {
     if (!mistakes.length) return;

@@ -7,7 +7,7 @@
   <script defer src="https://cloud.umami.is/script.js" data-website-id="a21e0a1b-d541-42d5-a46a-593c803caf8d"></script>
   <style>
     /* ---- Основные стили ---- */
-    html,body { -webkit-text-size-adjust: 100%; } /* блокирует нежелательный авто-зум iOS */
+    html,body { -webkit-text-size-adjust: 100%; } /* предотвращает авто-зум iOS */
     body { font-family: Arial, sans-serif; padding: 20px; max-width:900px; margin:auto; }
     #intro { background: #fff; padding:16px; border-radius:8px; border:1px solid #ddd; margin-bottom:16px; }
     #dua { direction: rtl; font-size:2em; margin:12px 0; font-weight:600; }
@@ -29,8 +29,8 @@
     .modal h2 { margin-top:0; }
     .modal p { margin:8px 0; }
     .modal .correct { direction: rtl; font-size:1.4em; font-weight:600; margin:10px 0; }
-    /* небольшая дополнительная безопасность — не использовать transform на контейнерах вокруг input */
-    /* Если вы где-то используете transform на родителях поля ввода — это может ломать позиционирование подсказок iOS */
+    /* Если у тебя где-то в проекте используются transform/filter на родителях input — это может быть причиной.
+       Диагностика внизу укажет на такие элементы в консоли. */
   </style>
 </head>
 <body>
@@ -49,7 +49,7 @@
     <h1>Арабский тренажёр</h1>
     <div id="progress" class="small"></div>
     <div id="arabicWord" lang="ar"></div>
-    <!-- ВАЖНО: включены autocorrect и spellcheck, отключено autocomplete (чтобы Safari не подставлял прошлые фразы формы) -->
+    <!-- Оставляем autocorrect включённым чтобы сохранить T9, но отключаем autocomplete (автозаполнение форм) -->
     <input id="userInput" type="text" placeholder="Введите перевод на русском" lang="ru"
            autocorrect="on" spellcheck="true" autocomplete="off" autocapitalize="off" inputmode="text">
     <br>
@@ -68,19 +68,14 @@
   <!-- Modal placeholder -->
   <div id="modal-root"></div>
 <script>
-  // ====== Основные структуры ======
-  let words = []; // { rawLine, ruVariants:[], arFull }
-  let orderRaw = []; // remaining rawLines (те, что в очереди)
-  let currentRaw = null;
-  let mistakes = [];
-  let correctLines = [];
-  let mode = 'all';
+  // ====== Основные структуры (оставил логику как у тебя) ======
+  let words = []; let orderRaw = []; let currentRaw = null; let mistakes = []; let correctLines = []; let mode = 'all';
   let modalTimeout = null;
   const STORAGE_KEY = (() => {
     const path = (location.pathname || '/').replace(/^\/|\/$/g,'').replace(/\//g,'_') || 'root';
     return `arabic_trainer_state_v1_${encodeURIComponent(location.hostname + '_' + path)}`;
   })();
-  // ====== Вспомогательные функции ======
+
   function parseLine(line) {
     const raw = (line||'').trim();
     const parts = raw.split(/[-–—]/);
@@ -90,21 +85,15 @@
     const arFull = arabicParts.join(' - ');
     return { rawLine: raw, ruVariants, arFull };
   }
-  function shuffleArray(a){
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-  }
+  function shuffleArray(a){ for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } }
   function normalizeRu(s) { return String(s||'').trim().toLowerCase().replace(/ё/g, 'е'); }
   function escapeHtml(s) { return String(s||'').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'})[c]); }
-  // ====== НОВАЯ ФУНКЦИЯ: Сравнение слов по содержимому ======
+
   function getWordContentHash(wordObj) {
     const ruContent = (wordObj.ruVariants || []).join('|');
     const arContent = wordObj.arFull;
     return `${ruContent}|||${arContent}`;
   }
-  // ====== Частичная ошибка: проверка последнего символа ======
   function isLastCharMistake(inputRaw, targetRaw){
     if(!inputRaw || !targetRaw) return false;
     const input = normalizeRu(inputRaw);
@@ -116,108 +105,59 @@
     if(input.length === target.length - 1 && target.startsWith(input)) return true;
     return false;
   }
-  // ====== Сохранение/восстановление состояния ======
   function saveState() {
     try {
-      const state = {
-        ts: Date.now(),
-        orderRaw: orderRaw.slice(),
-        currentRaw,
-        mistakes: mistakes.slice(),
-        correctLines: correctLines.slice(),
-        mode,
-        wordsList: words.map(w => w.rawLine)
-      };
+      const state = { ts: Date.now(), orderRaw: orderRaw.slice(), currentRaw, mistakes: mistakes.slice(), correctLines: correctLines.slice(), mode, wordsList: words.map(w => w.rawLine) };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (e) { console.warn('saveState failed', e); }
   }
   function loadState() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw);
+      const raw = localStorage.getItem(STORAGE_KEY); if (!raw) return null; return JSON.parse(raw);
     } catch (e) { return null; }
   }
   function clearSavedState() { localStorage.removeItem(STORAGE_KEY); }
-  // ====== robust fetch ======
   async function robustFetchWords(){
-    const timestamp = Date.now();
-    const tries = ['words.txt','./words.txt'];
+    const timestamp = Date.now(); const tries = ['words.txt','./words.txt'];
     try{ tries.push(location.pathname.replace(/\/[^/]*$/,'/') + 'words.txt'); }catch(e){}
-    for(const p of tries){
-      try{ const r = await fetch(p + '?_' + timestamp, {cache: 'no-store'}); if(r.ok) return await r.text(); }catch(e){}
-    }
-    try{
-      const user = location.hostname.split('.')[0] || '';
-      const repo = (location.pathname.split('/').filter(Boolean)[0] || '');
-      if(user && repo){
-        const raw = `https://raw.githubusercontent.com/${user}/${repo}/main/words.txt`;
-        const r = await fetch(raw + '?_' + timestamp, {cache: 'no-store'});
-        if(r.ok) return await r.text();
-      }
-    }catch(e){}
+    for(const p of tries){ try{ const r = await fetch(p + '?_' + timestamp, {cache: 'no-store'}); if(r.ok) return await r.text(); }catch(e){} }
+    try{ const user = location.hostname.split('.')[0] || ''; const repo = (location.pathname.split('/').filter(Boolean)[0] || ''); if(user && repo){ const raw = `https://raw.githubusercontent.com/${user}/${repo}/main/words.txt`; const r = await fetch(raw + '?_' + timestamp, {cache: 'no-store'}); if(r.ok) return await r.text(); } }catch(e){}
     throw new Error('Не удалось загрузить words.txt');
   }
-  // ====== Order / nextWord ======
+
   function prepareOrder(source='all') {
-    if (source === 'all') {
-      orderRaw = words.map(w => w.rawLine);
-      shuffleArray(orderRaw);
-      mode = 'all';
-    } else if (source === 'mistakes') {
-      orderRaw = mistakes.filter(r => words.some(w => w.rawLine === r)).slice();
-      shuffleArray(orderRaw);
-      mode = 'mistakes';
-    }
+    if (source === 'all') { orderRaw = words.map(w => w.rawLine); shuffleArray(orderRaw); mode = 'all'; }
+    else if (source === 'mistakes') { orderRaw = mistakes.filter(r => words.some(w => w.rawLine === r)).slice(); shuffleArray(orderRaw); mode = 'mistakes'; }
     saveState();
   }
   function nextWord() {
     if (!orderRaw || orderRaw.length === 0) {
-      if (mode === 'mistakes' && (!mistakes || mistakes.length === 0)) {
-        document.getElementById('arabicWord').textContent = 'Ошибок нет.';
-        updateProgress();
-        return;
-      }
+      if (mode === 'mistakes' && (!mistakes || mistakes.length === 0)) { document.getElementById('arabicWord').textContent = 'Ошибок нет.'; updateProgress(); return; }
       prepareOrder(mode === 'mistakes' ? 'mistakes' : 'all');
     }
-    if (orderRaw.length === 0) {
-      document.getElementById('arabicWord').textContent = 'Нет слов для тренировки.';
-      updateProgress();
-      return;
-    }
+    if (orderRaw.length === 0) { document.getElementById('arabicWord').textContent = 'Нет слов для тренировки.'; updateProgress(); return; }
     const raw = orderRaw.shift();
-    currentRaw = raw;
-    saveState();
+    currentRaw = raw; saveState();
     const w = words.find(w => w.rawLine === raw) || { rawLine: raw, ruVariants: [], arFull: raw };
-    if (!w.arFull || !w.arFull.trim()) {
-      console.warn('No arabic format for', raw, w);
-    }
     document.getElementById('arabicWord').textContent = w.arFull || w.rawLine;
     updateProgress();
-    // НЕ менять value в процессе набора (это могло ломать подсказки), мы ОЧИЩАЕМ поле только при показе нового слова:
     const inputEl = document.getElementById('userInput');
-    inputEl.value = '';
+    inputEl.value = ''; // очищаем при показе нового слова - это нормально
     inputEl.focus();
     return w;
   }
-  // ====== Завершение / прогресс ======
+
   function finishSession() {
-    const total = words.length || 0;
-    const done = total - (orderRaw ? orderRaw.length : 0);
+    const total = words.length || 0; const done = total - (orderRaw ? orderRaw.length : 0);
     document.getElementById('arabicWord').textContent = `Готово! Пройдено ${done}/${total} слов – ошибок: ${mistakes.length}`;
-    const btn = document.getElementById('startMistakesBtn');
-    if (mistakes.length) btn.classList.remove('hidden'); else btn.classList.add('hidden');
-    currentRaw = null;
-    saveState();
-    updateProgress();
+    const btn = document.getElementById('startMistakesBtn'); if (mistakes.length) btn.classList.remove('hidden'); else btn.classList.add('hidden');
+    currentRaw = null; saveState(); updateProgress();
   }
   function updateProgress() {
-    const total = words.length || 0;
-    const remaining = orderRaw.length || 0;
-    const done = total - remaining;
+    const total = words.length || 0; const remaining = orderRaw.length || 0; const done = total - remaining;
     document.getElementById('progress').textContent = `${done}/${total} слов пройдено – ${mistakes.length} ошибок`;
   }
-  // ====== Модалки ======
+
   function showInfoModal(title, bodyHtml, afterCloseCallback, autoCloseMs = 5000) {
     closeModal();
     const root = document.getElementById('modal-root');
@@ -226,26 +166,17 @@
     modal.setAttribute('role','dialog'); modal.setAttribute('aria-modal','true');
     modal.innerHTML = `<h2>${escapeHtml(title)}</h2><div>${bodyHtml}</div><div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;"><button id="modalCloseBtn">Закрыть (Esc)</button></div>`;
     overlay.appendChild(modal); root.appendChild(overlay);
-    function cleanup() {
-      if (modalTimeout) { clearTimeout(modalTimeout); modalTimeout = null; }
-      document.removeEventListener('keydown', onKey);
-      const btn = document.getElementById('modalCloseBtn'); if (btn) btn.removeEventListener('click', onBtn);
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    }
+    function cleanup() { if (modalTimeout) { clearTimeout(modalTimeout); modalTimeout = null; } document.removeEventListener('keydown', onKey); const btn = document.getElementById('modalCloseBtn'); if (btn) btn.removeEventListener('click', onBtn); if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }
     function onKey(e) { if (e.key === 'Escape') { cleanup(); if (typeof afterCloseCallback === 'function') afterCloseCallback(); } }
     function onBtn() { cleanup(); if (typeof afterCloseCallback === 'function') afterCloseCallback(); }
     document.addEventListener('keydown', onKey);
     const btn = document.getElementById('modalCloseBtn'); if (btn) btn.addEventListener('click', onBtn);
     modalTimeout = setTimeout(() => { cleanup(); if (typeof afterCloseCallback === 'function') afterCloseCallback(); }, autoCloseMs);
   }
-  function showWrongModal(correctText, afterCloseCallback) {
-    showInfoModal('Неправильно', `<div>Правильный ответ:</div><div class="correct">${escapeHtml(correctText)}</div>`, afterCloseCallback, 17000);
-  }
-  function showPartialModal(correctText, afterCloseCallback) {
-    showInfoModal('Почти правильно — засчитано как верный ответ', `<div>Полный правильный ответ:</div><div class="correct">${escapeHtml(correctText)}</div>`, afterCloseCallback, 5000);
-  }
+  function showWrongModal(correctText, afterCloseCallback) { showInfoModal('Неправильно', `<div>Правильный ответ:</div><div class="correct">${escapeHtml(correctText)}</div>`, afterCloseCallback, 17000); }
+  function showPartialModal(correctText, afterCloseCallback) { showInfoModal('Почти правильно — засчитано как верный ответ', `<div>Полный правильный ответ:</div><div class="correct">${escapeHtml(correctText)}</div>`, afterCloseCallback, 5000); }
   function closeModal() { const root = document.getElementById('modal-root'); root.innerHTML = ''; if (modalTimeout) { clearTimeout(modalTimeout); modalTimeout = null; } }
-  // ====== НОВАЯ: Модал подтверждения сброса ======
+
   function showResetModal() {
     closeModal();
     const overlay = document.createElement('div'); overlay.className = 'overlay';
@@ -260,21 +191,12 @@
     `;
     overlay.appendChild(modal);
     document.getElementById('modal-root').appendChild(overlay);
-    function cleanup() {
-      document.removeEventListener('keydown', onKey);
-      overlay.removeEventListener('click', onOverlay);
-      const cancelBtn = document.getElementById('modal-cancel');
-      const confirmBtn = document.getElementById('modal-confirm');
-      if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
-      if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
-      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    }
+    function cleanup() { document.removeEventListener('keydown', onKey); overlay.removeEventListener('click', onOverlay); const cancelBtn = document.getElementById('modal-cancel'); const confirmBtn = document.getElementById('modal-confirm'); if (cancelBtn) cancelBtn.removeEventListener('click', onCancel); if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm); if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }
     function onKey(e) { if (e.key === 'Escape') onCancel(); }
     function onOverlay(e) { if (e.target === overlay) onCancel(); }
     function onCancel() { cleanup(); }
     async function onConfirm() {
       cleanup();
-      // Выполнить сброс - загружаем все слова с сервера заново
       clearSavedState();
       try {
         const txt = await robustFetchWords();
@@ -297,10 +219,11 @@
     document.getElementById('modal-cancel').addEventListener('click', onCancel);
     document.getElementById('modal-confirm').addEventListener('click', onConfirm);
   }
-  // ====== Проверка ответа (и запись) ======
+
   function checkAnswer() {
     if (!currentRaw) return;
-    const inputRaw = document.getElementById('userInput').value;
+    const inputEl = document.getElementById('userInput');
+    const inputRaw = inputEl.value;
     const input = normalizeRu(inputRaw);
     if (!input) return;
     const wObj = words.find(w => w.rawLine === currentRaw) || { ruVariants: [] };
@@ -334,7 +257,7 @@
       if (!orderRaw || orderRaw.length === 0) finishSession(); else nextWord();
     });
   }
-  // ====== Добавить новые слова (только по кнопке) ======
+
   async function addNewWords() {
     try {
       const txt = await robustFetchWords();
@@ -356,7 +279,7 @@
       alert('Не удалось загрузить words.txt: ' + err);
     }
   }
-  // ====== Копирование ошибок ======
+
   function copyTextToClipboard(text, msg) {
     if (!text) { alert('Нет данных для копирования.'); return; }
     navigator.clipboard.writeText(text).then(()=> alert(msg)).catch(()=> {
@@ -364,79 +287,77 @@
       try { document.execCommand('copy'); alert(msg); } catch(e) { alert('Не удалось скопировать'); } ta.remove();
     });
   }
-  // ====== ИСПРАВЛЕННАЯ: Загрузка слов и восстановление состояния ======
+
   async function loadWords() {
     try {
       const txt = await robustFetchWords();
       const serverLines = txt.split(/\r?\n/).map(s => s.trim()).filter(s => s);
       const serverWords = serverLines.map(l => parseLine(l));
-      // load saved state if exists
       const st = loadState();
-    
+
       if (st && Array.isArray(st.wordsList) && st.wordsList.length) {
-        // Восстанавливаем words из сохраненных rawLine
-        words = st.wordsList.map(raw => {
-          const parsed = parseLine(raw);
-          return { rawLine: raw, ...parsed };
-        });
-      
-        // Мапы для поиска
+        words = st.wordsList.map(raw => { const parsed = parseLine(raw); return { rawLine: raw, ...parsed }; });
         const serverRawSet = new Set(serverLines);
-      
-        // 1. Удаленные слова - убираем из words и всех списков
         words = words.filter(w => serverRawSet.has(w.rawLine));
-      
         orderRaw = (Array.isArray(st.orderRaw) ? st.orderRaw.filter(r => serverRawSet.has(r)) : []);
         mistakes = (Array.isArray(st.mistakes) ? st.mistakes.filter(r => serverRawSet.has(r)) : []);
         correctLines = (Array.isArray(st.correctLines) ? st.correctLines.filter(r => serverRawSet.has(r)) : []);
         currentRaw = (st.currentRaw && serverRawSet.has(st.currentRaw)) ? st.currentRaw : null;
         mode = st.mode || 'all';
-      
-        // 2. Измененные слова - обновляем в words и сбрасываем прогресс
         const serverByRaw = new Map(serverWords.map(w => [w.rawLine, w]));
         const changedWords = [];
-      
         words.forEach((existingWord, index) => {
           const serverWord = serverByRaw.get(existingWord.rawLine);
           if (serverWord && getWordContentHash(existingWord) !== getWordContentHash(serverWord)) {
-            // Обновляем
             words[index] = serverWord;
             changedWords.push(serverWord.rawLine);
           }
         });
-      
-        // Сбрасываем прогресс для измененных: убираем из correct/mistakes, добавляем в начало orderRaw
         changedWords.forEach(rawLine => {
           correctLines = correctLines.filter(r => r !== rawLine);
           mistakes = mistakes.filter(r => r !== rawLine);
-          if (!orderRaw.includes(rawLine)) {
-            orderRaw.unshift(rawLine); // В начало очереди
-          }
+          if (!orderRaw.includes(rawLine)) { orderRaw.unshift(rawLine); }
         });
-      
-        // НЕ добавляем новые слова автоматически
-      
       } else {
-        // Fresh init - добавляем все слова с сервера
         words = serverWords.slice();
         prepareOrder('all');
       }
-    
+
       document.getElementById('mistake-list').value = mistakes.join('\n');
       document.getElementById('correct-list').value = correctLines.join('\n');
-    
-      // Показываем intro, пользователь кликнет "Я сделал дуа"
+
       document.getElementById('intro').classList.remove('hidden');
       document.getElementById('main').classList.add('hidden');
       updateProgress();
       saveState();
-    
+
+      // Диагностика предков input (выведет в консоль, если найдёт transform/filter и т.п.)
+      try {
+        (function diagnoseTransformAncestors(){
+          const input = document.getElementById('userInput');
+          if (!input) return;
+          let el = input;
+          while (el && el !== document.documentElement) {
+            const cs = getComputedStyle(el);
+            const transform = cs.transform && cs.transform !== 'none';
+            const filter = cs.filter && cs.filter !== 'none';
+            const perspective = cs.perspective && cs.perspective !== 'none';
+            const will = (cs.willChange || '').includes('transform') || (cs.willChange || '').includes('filter');
+            const backdrop = cs.getPropertyValue('-webkit-backdrop-filter') || cs.getPropertyValue('backdrop-filter');
+            if (transform || filter || perspective || will || (backdrop && backdrop !== 'none')) {
+              console.warn('INPUT ancestor with transform/filter/will-change/backdrop detected:', el, { transform: cs.transform, filter: cs.filter, perspective: cs.perspective, willChange: cs.willChange, backdropFilter: backdrop });
+            }
+            el = el.parentElement;
+          }
+        })();
+      } catch (e) {}
     } catch (err) {
       document.getElementById('arabicWord').textContent = 'Не удалось загрузить words.txt: ' + err;
       console.error(err);
     }
   }
-  // ====== Обработчики UI ======
+
+  // ====== UI handlers ======
   document.getElementById('doneDua').addEventListener('click', () => {
     document.getElementById('intro').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
@@ -452,19 +373,31 @@
   });
   document.getElementById('submitBtn').addEventListener('click', checkAnswer);
 
-  // ====== ВАЖНО: обработка IME/composition чтобы не мешать подсказкам клавиатуры ======
-  const userInput = document.getElementById('userInput');
+  // ====== IME-safe behaviour (FIX for iOS suggestion overlay) ======
+  const usr = document.getElementById('userInput');
   let composing = false;
-  userInput.addEventListener('compositionstart', () => composing = true);
-  userInput.addEventListener('compositionend', () => { composing = false; });
+  usr.addEventListener('compositionstart', () => { composing = true; });
+  usr.addEventListener('compositionend', () => {
+    composing = false;
+    // небольшая отложенная корректировка каретки — помогает Safari обновить предсказания
+    setTimeout(() => {
+      try { const pos = usr.value.length; usr.setSelectionRange(pos, pos); } catch (e) {}
+    }, 0);
+  });
 
-  // Enter: если сейчас составление (composing) — не отправляем, иначе отправляем
-  userInput.addEventListener('keydown', e => {
+  // На каждый input (когда не composing) принудительно обновляем позицию каретки — это обход багов отрисовки T9
+  usr.addEventListener('input', () => {
+    if (composing) return;
+    // не меняем value; только "обновляем" caret
+    requestAnimationFrame(() => {
+      try { const pos = usr.selectionStart != null ? usr.selectionStart : usr.value.length; usr.setSelectionRange(pos, pos); } catch (e) {}
+    });
+  });
+
+  // Enter: если сейчас composition — даём IME завершиться, иначе отправляем
+  usr.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
-      if (composing) {
-        // Позволяем IME завершить выбор подсказки
-        return;
-      }
+      if (composing) return;
       e.preventDefault();
       checkAnswer();
     }
@@ -483,7 +416,8 @@
   document.getElementById('addNewBtn').addEventListener('click', addNewWords);
   document.getElementById('resetBtn').addEventListener('click', showResetModal);
   window.addEventListener('beforeunload', saveState);
-  // старт загрузки
+
+  // старт
   loadWords();
 </script>
 </body>

@@ -358,15 +358,22 @@ function startPractice(){
   phase = 'practice';
   learnControls.classList.add('hidden');
   practiceArea.classList.remove('hidden');
-  let practiceWords = masteredFinal.slice();
+  // ИСПРАВЛЕНИЕ: Формируем practiceOrder правильно
+  // 1. Сначала 10 новых слов из practiceAccum (из фазы заучивания)
   let newWords = practiceAccum.slice(0, BATCH_SIZE);
-  practiceOrder = practiceWords.concat(newWords);
+  // 2. Затем ВСЕ слова из masteredFinal (окончательно заученные)
+  let practiceWords = masteredFinal.slice();
+  // 3. Объединяем: сначала новые слова, потом окончательно заученные
+  practiceOrder = newWords.concat(practiceWords);
+  // 4. Перемешиваем только окончательно заученные слова между собой
   if(practiceWords.length > 1) {
     const shuffledMastered = practiceWords.slice();
     shuffle(shuffledMastered);
-    practiceOrder = shuffledMastered.concat(newWords);
+    practiceOrder = newWords.concat(shuffledMastered);
   }
+  // 5. Очищаем practiceAccum (слова теперь в практике)
   practiceAccum = [];
+  // Сбрасываем накопления для раунда
   roundMastered = [];
   saveState();
   updateStats();
@@ -375,7 +382,9 @@ function startPractice(){
 /* ---------- showNextPractice ---------- */
 function showNextPractice(){
   if(!practiceOrder || practiceOrder.length === 0) {
+    // ИСПРАВЛЕНИЕ: Возвращаем неосвоенные слова в orderQueue
     if(roundMastered.length > 0) {
+      // Слова, которые НЕ были освоены в этом раунде, возвращаем в orderQueue
       const notMastered = practiceOrder.filter(word => !roundMastered.includes(word));
       orderQueue = orderQueue.concat(notMastered);
     }
@@ -407,8 +416,10 @@ practiceSubmit.addEventListener('click', async () => {
     const userNorm = normalizeRu(val);
     const exact = (obj.rus||[]).some(r => normalizeRu(r) === userNorm);
     const almost = !exact && (obj.rus||[]).some(r => isLastCharMistake(userNorm, normalizeRu(r)));
+    // ИЗМЕНЕНИЕ: Проверяем, является ли текущее слово из masteredFinal
     const isFromMastered = masteredFinal.includes(currentRaw);
     if(exact){
+      // Правильный ответ - НЕ возвращаем в practiceOrder, просто переходим к следующему
       if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
       if(!masteredFinal.includes(currentRaw)) masteredFinal.push(currentRaw);
       if(!practiceHistory.includes(currentRaw)) practiceHistory.push(currentRaw);
@@ -419,6 +430,7 @@ practiceSubmit.addEventListener('click', async () => {
       enablePracticeControls();
       showNextPractice();
     } else if(almost){
+      // Мелкая ошибка - тоже засчитываем, НЕ возвращаем в practiceOrder
       if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
       if(!masteredFinal.includes(currentRaw)) masteredFinal.push(currentRaw);
       if(!practiceHistory.includes(currentRaw)) practiceHistory.push(currentRaw);
@@ -428,17 +440,23 @@ practiceSubmit.addEventListener('click', async () => {
       currentRaw = null;
       enablePracticeControls();
     } else {
+      // Неправильный ответ
       if(isFromMastered) {
+        // ИЗМЕНЕНИЕ: Если слово из masteredFinal - не возвращаем в orderQueue
+        // Вместо этого возвращаем его в начало practiceOrder для повторного вопроса
         practiceOrder.unshift(currentRaw);
         saveState();
         updateStats();
+        // Показываем модалку с правильным ответом, после закрытия спрашиваем снова
         showPracticeAnswerModal(obj, 'Неправильно', true, () => {
           currentRaw = null;
           enablePracticeControls();
           showNextPractice();
         });
       } else {
+        // Для слов не из masteredFinal - возвращаем в orderQueue как раньше
         orderQueue.unshift(currentRaw);
+        // Если это было из masteredFinal - убираем оттуда (но это не должно произойти здесь)
         if(masteredFinal.includes(currentRaw)) {
           masteredFinal = masteredFinal.filter(r=>r!==currentRaw);
           practiceHistory = practiceHistory.filter(r=>r!==currentRaw);
@@ -455,15 +473,20 @@ practiceSubmit.addEventListener('click', async () => {
 practiceInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); practiceSubmit.click(); } });
 practiceSkip.addEventListener('click', ()=>{
   if(!currentRaw) return;
+  // ИЗМЕНЕНИЕ: Проверяем, является ли текущее слово из masteredFinal
   const isFromMastered = masteredFinal.includes(currentRaw);
   if(isFromMastered) {
+    // ИЗМЕНЕНИЕ: Если слово из masteredFinal - не возвращаем в orderQueue
+    // Вместо этого возвращаем его в начало practiceOrder для повторного вопроса
     practiceOrder.unshift(currentRaw);
     saveState();
     updateStats();
     currentRaw = null;
     showNextPractice();
   } else {
+    // Для слов не из masteredFinal - возвращаем в orderQueue как раньше
     orderQueue.unshift(currentRaw);
+    // Если это было из masteredFinal - убираем оттуда (но это не должно произойти здесь)
     if(masteredFinal.includes(currentRaw)) {
       masteredFinal = masteredFinal.filter(r => r !== currentRaw);
       practiceHistory = practiceHistory.filter(r => r !== currentRaw);

@@ -44,7 +44,7 @@
     <h1>Арабский тренажёр</h1>
     <div id="progress" class="small"></div>
     <div id="arabicWord"></div>
-    <input id="userInput" type="text" placeholder="Введите перевод на русском" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <input id="userInput" type="text" placeholder="Введите перевод на русском">
     <br>
     <button id="submitBtn">Ответить</button>
     <h3>Правильно:</h3>
@@ -113,7 +113,7 @@
     return false;
   }
 
-  // ====== НОВАЯ ФУНКЦИЯ: Сброс состояния ввода для iOS ======
+  // ====== ИСПРАВЛЕННАЯ ФУНКЦИЯ: Сброс состояния ввода для iOS (сохраняет T9) ======
   function resetInputForIOS() {
     const input = document.getElementById('userInput');
     if (!input) return;
@@ -121,17 +121,18 @@
     // Очищаем поле
     input.value = '';
     
-    // Убираем фокус
+    // Убираем фокус - это сигнализирует iOS, что слово завершено
     input.blur();
     
     // Небольшая задержка для iOS, чтобы система поняла, что ввод завершен
+    // и сбросила контекст T9 для следующего слова
     setTimeout(() => {
-      // Восстанавливаем пустое значение (на всякий случай)
+      // Восстанавливаем пустое значение
       input.value = '';
       
-      // Возвращаем фокус
+      // Возвращаем фокус для следующего ввода
       input.focus();
-    }, 50);
+    }, 100);
   }
 
   // ====== Сохранение/восстановление состояния ======
@@ -216,7 +217,7 @@
     document.getElementById('arabicWord').textContent = w.arFull || w.rawLine;
     updateProgress();
     
-    // ИСПРАВЛЕНИЕ: Используем функцию сброса для iOS
+    // ИСПРАВЛЕНИЕ: Используем функцию сброса для iOS (T9 остается включенным)
     resetInputForIOS();
     
     return w;
@@ -337,6 +338,7 @@
       currentRaw = null;
       
       // ИСПРАВЛЕНИЕ: Сбрасываем состояние ввода для iOS перед переходом к следующему слову
+      // T9 остается включенным, но контекст сбрасывается
       resetInputForIOS();
       
       if (!orderRaw || orderRaw.length === 0) finishSession(); else nextWord();
@@ -351,7 +353,7 @@
       showPartialModal(correctText, () => {
         currentRaw = null;
         
-        // ИСПРАВЛЕНИЕ: Сбрасываем состояние ввода для iOS
+        // ИСПРАВЛЕНИЕ: Сбрасываем состояние ввода для iOS (T9 остается включенным)
         resetInputForIOS();
         
         if (!orderRaw || orderRaw.length === 0) finishSession(); else nextWord();
@@ -365,7 +367,7 @@
     showWrongModal(correctText, () => {
       currentRaw = null;
       
-      // ИСПРАВЛЕНИЕ: Сбрасываем состояние ввода для iOS
+      // ИСПРАВЛЕНИЕ: Сбрасываем состояние ввода для iOS (T9 остается включенным)
       resetInputForIOS();
       
       if (!orderRaw || orderRaw.length === 0) finishSession(); else nextWord();
@@ -499,6 +501,7 @@
   document.getElementById('userInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkAnswer(); }});
   
   // ИСПРАВЛЕНИЕ: Добавляем обработчик для события compositionend (завершение ввода на iOS)
+  // Это помогает iOS правильно обработать завершение слова
   document.getElementById('userInput').addEventListener('compositionend', () => {
     // Это событие срабатывает когда iOS завершает ввод слова
     // Не делаем ничего, просто позволяем iOS обработать событие

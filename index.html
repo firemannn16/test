@@ -62,6 +62,7 @@
   <div class="controls" style="margin-top:8px">
     <button id="practice-submit">Проверить</button>
     <button id="practice-skip">Пропустить</button>
+    <button id="practice-oral" class="hidden">Ответил устно</button>
   </div>
 </div>
 <div id="message" class="small" style="margin-top:12px"></div>
@@ -105,6 +106,7 @@ const practiceArea = document.getElementById('practice-area');
 const practiceInput = document.getElementById('practice-input');
 const practiceSubmit = document.getElementById('practice-submit');
 const practiceSkip = document.getElementById('practice-skip');
+const practiceOral = document.getElementById('practice-oral');
 const modalRoot = document.getElementById('modal-root');
 /* ---------- Утилиты ---------- */
 function normalizeRu(s){
@@ -401,11 +403,16 @@ function showNextPractice(){
   arabicDiv.textContent = obj.arabFull || (obj.arabParts||[]).join(' - ') || '[нет арабского]';
   practiceInput.value = '';
   practiceInput.focus();
+  if(masteredFinal.includes(currentRaw)) {
+    practiceOral.classList.remove('hidden');
+  } else {
+    practiceOral.classList.add('hidden');
+  }
   updateStats();
 }
 /* ---------- Практика: проверка (Enter и кнопка) ---------- */
-function enablePracticeControls(){ practiceSubmit.disabled=false; practiceSkip.disabled=false; practiceInput.disabled=false; practiceInput.focus(); }
-function disablePracticeControls(){ practiceSubmit.disabled=true; practiceSkip.disabled=true; practiceInput.disabled=true; }
+function enablePracticeControls(){ practiceSubmit.disabled=false; practiceSkip.disabled=false; practiceOral.disabled=false; practiceInput.disabled=false; practiceInput.focus(); }
+function disablePracticeControls(){ practiceSubmit.disabled=true; practiceSkip.disabled=true; practiceOral.disabled=true; practiceInput.disabled=true; }
 practiceSubmit.addEventListener('click', async () => {
   if(!currentRaw) return;
   disablePracticeControls();
@@ -496,6 +503,21 @@ practiceSkip.addEventListener('click', ()=>{
     currentRaw = null;
     showNextPractice();
   }
+});
+practiceOral.addEventListener('click', () => {
+  if(!currentRaw) return;
+  disablePracticeControls();
+  const isFromMastered = masteredFinal.includes(currentRaw);
+  if(!isFromMastered) { enablePracticeControls(); return; }
+  if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
+  if(!masteredFinal.includes(currentRaw)) masteredFinal.push(currentRaw);
+  if(!practiceHistory.includes(currentRaw)) practiceHistory.push(currentRaw);
+  showMessage('Верно — отмечено как окончательно выученное.');
+  saveState();
+  updateStats();
+  currentRaw = null;
+  enablePracticeControls();
+  showNextPractice();
 });
 /* ---------- ИСПРАВЛЕННАЯ ФУНКЦИЯ: Добавить новые слова (только по кнопке) ---------- */
 btnAdd.addEventListener('click', async () => {

@@ -445,12 +445,7 @@ function showNextPractice(){
   arabicDiv.textContent = obj.arabFull || (obj.arabParts||[]).join(' - ') || '[нет арабского]';
   practiceInput.value = '';
   practiceInput.focus();
-  const isOld = masteredFinal.includes(currentRaw);
-  if(isOld){
-    oralAnswerBtn.classList.remove('hidden');
-  } else {
-    oralAnswerBtn.classList.add('hidden');
-  }
+  oralAnswerBtn.classList.remove('hidden');
   updateStats();
 }
 /* ---------- Устный ответ (только для старых слов) ---------- */

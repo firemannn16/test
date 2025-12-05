@@ -66,7 +66,7 @@ function getDeviceId() {
   return deviceId;
 }
 /* ---------- Настройки ---------- */
-const BATCH_SIZE = 1888;
+const BATCH_SIZE = 33;
 const SHOW_ANSWER_MS = 15000;
 const STORAGE_KEY = (() => {
   const p = (location.pathname||'/').replace(/^\/|\/$/g,'').replace(/\//g,'_') || 'root';
@@ -445,17 +445,17 @@ function showNextPractice(){
   arabicDiv.textContent = obj.arabFull || (obj.arabParts||[]).join(' - ') || '[нет арабского]';
   practiceInput.value = '';
   practiceInput.focus();
-  oralAnswerBtn.classList.remove('hidden');
+  const isOld = masteredFinal.includes(currentRaw);
+  if(isOld){
+    oralAnswerBtn.classList.remove('hidden');
+  } else {
+    oralAnswerBtn.classList.add('hidden');
+  }
   updateStats();
 }
-/* ---------- Устный ответ ---------- */
+/* ---------- Устный ответ (только для старых слов) ---------- */
 oralAnswerBtn.addEventListener('click', () => {
-  if(!currentRaw) return;
-  const isOld = masteredFinal.includes(currentRaw);
-  if(!isOld) {
-    masteredFinal.push(currentRaw);
-    practiceHistory.push(currentRaw);
-  }
+  if(!currentRaw || !masteredFinal.includes(currentRaw)) return;
   if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
   showMessage('Засчитано как верный (устно)');
   currentRaw = null;

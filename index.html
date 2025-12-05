@@ -80,6 +80,7 @@ let practiceHistory = [];
 let roundMastered = [];
 let practiceAccum = [];
 let practiceOrder = [];
+let repeatList = []; // НОВОЕ: Список для повторения
 let phase = 'learn';
 let currentRaw = null;
 let modalTimer = null;
@@ -95,6 +96,7 @@ const arabicDiv = document.getElementById('arabic');
 const learnControls = document.getElementById('learn-controls');
 const btnKnow = document.getElementById('btn-know');
 const btnDont = document.getElementById('btn-dont');
+const btnRepeatLearn = document.getElementById('btn-repeat-learn'); // НОВОЕ
 const btnAdd = document.getElementById('btn-add');
 const btnReset = document.getElementById('btn-reset');
 const messageDiv = document.getElementById('message');
@@ -102,7 +104,10 @@ const practiceArea = document.getElementById('practice-area');
 const practiceInput = document.getElementById('practice-input');
 const practiceSubmit = document.getElementById('practice-submit');
 const practiceSkip = document.getElementById('practice-skip');
+const btnRepeatPractice = document.getElementById('btn-repeat-practice'); // НОВОЕ
 const oralAnswerBtn = document.getElementById('oral-answer');
+const repeatListDiv = document.getElementById('repeat-list'); // НОВОЕ
+const btnCopyRepeat = document.getElementById('btn-copy-repeat'); // НОВОЕ
 const modalRoot = document.getElementById('modal-root');
 /* ---------- Утилиты ---------- */
 function normalizeRu(s){
@@ -148,6 +153,7 @@ async function saveState(){
     roundMastered: roundMastered.slice(),
     practiceAccum: practiceAccum.slice(),
     practiceOrder: practiceOrder.slice(),
+    repeatList: repeatList.slice(), // НОВОЕ
     phase, currentRaw,
     timestamp: Date.now()
   };
@@ -269,6 +275,7 @@ async function initDictionary(){
       roundMastered = (Array.isArray(st.roundMastered) ? st.roundMastered.filter(r => serverRawSet.has(r)) : []);
       practiceAccum = (Array.isArray(st.practiceAccum) ? st.practiceAccum.filter(r => serverRawSet.has(r)) : []);
       practiceOrder = (Array.isArray(st.practiceOrder) ? st.practiceOrder.filter(r => serverRawSet.has(r)) : []);
+      repeatList = (Array.isArray(st.repeatList) ? st.repeatList.filter(r => serverRawSet.has(r)) : []); // НОВОЕ
       const changedWords = [];
       allWords.forEach((existingWord, index) => {
         if(serverRawSet.has(existingWord.rawLine)){
@@ -285,6 +292,7 @@ async function initDictionary(){
         roundMastered = roundMastered.filter(r => r !== rawLine);
         practiceAccum = practiceAccum.filter(r => r !== rawLine);
         practiceOrder = practiceOrder.filter(r => r !== rawLine);
+        repeatList = repeatList.filter(r => r !== rawLine); // НОВОЕ
         if(!orderQueue.includes(rawLine)) orderQueue.push(rawLine);
       });
     } else {
@@ -294,19 +302,21 @@ async function initDictionary(){
       roundMastered = st.roundMastered || [];
       practiceAccum = st.practiceAccum || [];
       practiceOrder = st.practiceOrder || [];
+      repeatList = st.repeatList || []; // НОВОЕ
     }
     phase = st.phase || 'learn';
     currentRaw = (st.currentRaw && serverRawSet.has(st.currentRaw)) ? st.currentRaw : null;
   } else {
     if(serverWords.length > 0){
       allWords = serverWords.slice();
-      masteredFinal = []; practiceHistory = []; roundMastered = []; practiceAccum = []; practiceOrder = [];
+      masteredFinal = []; practiceHistory = []; roundMastered = []; practiceAccum = []; practiceOrder = []; repeatList = []; // НОВОЕ
       phase = 'learn'; currentRaw = null;
       orderQueue = allWords.map(w=>w.rawLine);
       shuffle(orderQueue);
     }
   }
   updateStats();
+  updateRepeatList(); // НОВОЕ: Обновляем список при инициализации
   saveState().catch(e => console.warn('Save failed:', e));
 }
 /* ---------- UI helpers ---------- */
@@ -317,6 +327,40 @@ function updateStats(){
   statPhase.textContent = phase === 'learn' ? 'Заучивание' : (phase === 'practice' ? 'Практика' : '—');
 }
 function showMessage(t){ messageDiv.textContent = t || ''; }
+/* ---------- НОВОЕ: Обновление списка "Нужно повторить" ---------- */
+function updateRepeatList(){
+  repeatListDiv.innerHTML = '';
+  if(repeatList.length === 0){
+    repeatListDiv.textContent = 'Список пуст';
+    return;
+  }
+  const ul = document.createElement('ul');
+  let copyText = '';
+  repeatList.forEach(raw => {
+    const obj = allWords.find(w=>w.rawLine===raw) || parseLine(raw);
+    let html = '';
+    const ar = obj.arabParts || [];
+    const rus = obj.rus || [];
+    if(rus.length && ar.length && rus.length === ar.length){
+      for(let i=0; i<rus.length; i++){
+        html += `${escapeHtml(rus[i])} — <span style="direction:rtl">${escapeHtml(ar[i])}</span><br>`;
+        copyText += `${rus[i]} - ${ar[i]}\n`;
+      }
+    } else {
+      const arabAll = ar.join(' - ');
+      rus.forEach(r => {
+        html += `${escapeHtml(r)} — <span style="direction:rtl">${escapeHtml(arabAll)}</span><br>`;
+        copyText += `${r} - ${arabAll}\n`;
+      });
+    }
+    copyText += '\n'; // Разделитель между словами
+    const li = document.createElement('li');
+    li.innerHTML = html;
+    ul.appendChild(li);
+  });
+  repeatListDiv.appendChild(ul);
+  // Копирование в буфер (событие добавлено один раз ниже)
+}
 /* ---------- Заучивание ---------- */
 function showNextLearn(){
   phase = 'learn';
@@ -358,6 +402,23 @@ btnDont.addEventListener('click', () => {
   const obj = allWords.find(w=>w.rawLine===currentRaw) || parseLine(currentRaw);
   showDontKnowModal(obj);
   currentRaw = null;
+});
+/* ---------- НОВОЕ: Кнопка "Нужно повторить" в заучивании ---------- */
+btnRepeatLearn.addEventListener('click', () => {
+  if(!currentRaw) return;
+  orderQueue.shift();
+  if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
+  if(!practiceAccum.includes(currentRaw)) practiceAccum.push(currentRaw);
+  if(!repeatList.includes(currentRaw)) repeatList.push(currentRaw);
+  showMessage('Добавлено в "Нужно повторить"');
+  currentRaw = null;
+  if (practiceAccum.length >= BATCH_SIZE) {
+    startPractice();
+  } else {
+    showNextLearn();
+  }
+  updateRepeatList();
+  saveState();
 });
 /* ---------- Modal: "Не знаю" ---------- */
 function showDontKnowModal(obj){
@@ -426,6 +487,7 @@ function startPractice(){
   roundMastered = [];
   updateStats();
   showNextPractice();
+  updateRepeatList(); // НОВОЕ: Обновляем список при старте практики
   saveState();
 }
 /* ---------- showNextPractice ---------- */
@@ -459,6 +521,19 @@ oralAnswerBtn.addEventListener('click', () => {
   if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
   showMessage('Засчитано как верный (устно)');
   currentRaw = null;
+  showNextPractice();
+  saveState();
+});
+/* ---------- НОВОЕ: Кнопка "Нужно повторить" в практике ---------- */
+btnRepeatPractice.addEventListener('click', () => {
+  if(!currentRaw) return;
+  if(!roundMastered.includes(currentRaw)) roundMastered.push(currentRaw);
+  if(!masteredFinal.includes(currentRaw)) masteredFinal.push(currentRaw);
+  if(!practiceHistory.includes(currentRaw)) practiceHistory.push(currentRaw);
+  if(!repeatList.includes(currentRaw)) repeatList.push(currentRaw);
+  showMessage('Добавлено в "Нужно повторить"');
+  currentRaw = null;
+  updateRepeatList();
   showNextPractice();
   saveState();
 });
@@ -577,7 +652,7 @@ function showResetModal() {
     cleanup();
     await clearState();
     orderQueue = allWords.map(w=>w.rawLine); shuffle(orderQueue);
-    masteredFinal = []; practiceHistory = []; roundMastered = []; practiceAccum = []; practiceOrder = []; phase='learn'; currentRaw=null;
+    masteredFinal = []; practiceHistory = []; roundMastered = []; practiceAccum = []; practiceOrder = []; repeatList = []; // НОВОЕ
     screenMain.classList.add('hidden'); screenDua.classList.remove('hidden');
     updateStats();
     showMessage('Прогресс сброшен.');
@@ -609,6 +684,32 @@ btnDoneDua.addEventListener('click', async () => {
     showNextLearn();
   }
 });
+/* ---------- НОВОЕ: Копирование списка в буфер обмена ---------- */
+btnCopyRepeat.addEventListener('click', () => {
+  let copyText = '';
+  repeatList.forEach(raw => {
+    const obj = allWords.find(w=>w.rawLine===raw) || parseLine(raw);
+    const ar = obj.arabParts || [];
+    const rus = obj.rus || [];
+    if(rus.length && ar.length && rus.length === ar.length){
+      for(let i=0; i<rus.length; i++){
+        copyText += `${rus[i]} - ${ar[i]}\n`;
+      }
+    } else {
+      const arabAll = ar.join(' - ');
+      rus.forEach(r => {
+        copyText += `${r} - ${arabAll}\n`;
+      });
+    }
+    copyText += '\n';
+  });
+  navigator.clipboard.writeText(copyText).then(() => {
+    showMessage('Слова скопированы в буфер обмена');
+  }).catch(e => {
+    console.error(e);
+    showMessage('Ошибка копирования');
+  });
+});
 /* ---------- bootstrap ---------- */
 (async function bootstrap(){
   try{ await initDictionary(); screenDua.classList.remove('hidden'); screenMain.classList.add('hidden'); }catch(e){ console.error(e); }
@@ -639,6 +740,7 @@ function closeModal(){ modalRoot.innerHTML=''; if(modalTimer){ clearTimeout(moda
     <div id="learn-controls" class="controls">
       <button id="btn-know" class="btn-primary">Знаю</button>
       <button id="btn-dont">Не знаю</button>
+      <button id="btn-repeat-learn">Нужно повторить</button>
     </div>
     <div class="controls-vertical">
       <div class="controls">
@@ -653,6 +755,12 @@ function closeModal(){ modalRoot.innerHTML=''; if(modalTimer){ clearTimeout(moda
         <button id="practice-submit">Проверить</button>
         <button id="practice-skip">Пропустить</button>
         <button id="oral-answer" class="btn-primary hidden">Ответил устно</button>
+        <button id="btn-repeat-practice">Нужно повторить</button>
+      </div>
+      <div style="margin-top:20px">
+        <h3>Нужно повторить</h3>
+        <div id="repeat-list"></div>
+        <button id="btn-copy-repeat" style="margin-top:8px">Копировать слова</button>
       </div>
     </div>
     <div id="message" class="small" style="margin-top:12px"></div>

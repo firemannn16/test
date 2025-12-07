@@ -359,18 +359,16 @@ btnDont.addEventListener('click', () => {
   showDontKnowModal(obj);
   currentRaw = null;
 });
-/* ---------- Modal: "Не знаю" ---------- */
+/* ---------- Modal: "Не знаю" (ИЗМЕНЕНО: объединённый формат) ---------- */
 function showDontKnowModal(obj){
   closeModal();
   const overlay = document.createElement('div'); overlay.className='overlay';
   const modal = document.createElement('div'); modal.className='modal';
   let html = '';
-  const ar = obj.arabParts && obj.arabParts.length ? obj.arabParts : (obj.arabFull?obj.arabFull.split(/\s*-\s*/).map(s=>s.trim()):[]);
-  if(obj.rus.length && ar.length && obj.rus.length === ar.length){
-    for(let i=0;i<obj.rus.length;i++) html += `<div class="pair">${escapeHtml(obj.rus[i])} — <span style="direction:rtl">${escapeHtml(ar[i])}</span></div>`;
-  } else {
-    const arabAll = ar.join(' - ');
-    for(const r of obj.rus.length?obj.rus:['']) html += `<div class="pair">${escapeHtml(r)} — <span style="direction:rtl">${escapeHtml(arabAll)}</span></div>`;
+  const rusCombined = obj.rus.length ? obj.rus.join(', ') : '';
+  const arabCombined = obj.arabFull || (obj.arabParts || []).join(' - ') || '';
+  if (rusCombined || arabCombined) {
+    html = `<div class="pair">${escapeHtml(rusCombined)} — <span style="direction:rtl">${escapeHtml(arabCombined)}</span></div>`;
   }
   modal.innerHTML = `<div><strong>Перевод (показывается 15 с)</strong></div><div style="margin-top:8px">${html}</div>`;
   overlay.appendChild(modal);
@@ -384,42 +382,40 @@ function showDontKnowModal(obj){
     }
   }, SHOW_ANSWER_MS);
 }
-/* ---------- Modal: практика — при ошибке и мелкой ошибке (ИЗМЕНЕНО: добавлен userInput) ---------- */
-function showPracticeAnswerModal(obj, title = 'Правильный ответ', autoClose = true, onClose = null, userInput = ''){
+/* ---------- Modal: практика — при ошибке и мелкой ошибке (ИЗМЕНЕНО: объединённый формат и кнопка копирования правильного ответа) ---------- */
+function showPracticeAnswerModal(obj, title = 'Правильный ответ', autoClose = true, onClose = null){
   closeModal();
   const overlay = document.createElement('div'); overlay.className='overlay';
   const modal = document.createElement('div'); modal.className='modal';
   let html = '';
-  const ar = obj.arabParts && obj.arabParts.length ? obj.arabParts : (obj.arabFull?obj.arabFull.split(/\s*-\s*/).map(s=>s.trim()):[]);
-  if(obj.rus.length && ar.length && obj.rus.length === ar.length){
-    for(let i=0;i<obj.rus.length;i++) html += `<div class="pair">${escapeHtml(obj.rus[i])} — <span style="direction:rtl">${escapeHtml(ar[i])}</span></div>`;
-  } else {
-    const arabAll = ar.join(' - ');
-    for(const r of obj.rus.length?obj.rus:['']) html += `<div class="pair">${escapeHtml(r)} — <span style="direction:rtl">${escapeHtml(arabAll)}</span></div>`;
+  const rusCombined = obj.rus.length ? obj.rus.join(', ') : '';
+  const arabCombined = obj.arabFull || (obj.arabParts || []).join(' - ') || '';
+  if (rusCombined || arabCombined) {
+    html = `<div class="pair">${escapeHtml(rusCombined)} — <span style="direction:rtl">${escapeHtml(arabCombined)}</span></div>`;
   }
-  let errorSection = '';
-  if (userInput && (title.includes('ошибка') || title.includes('Неправильно'))) {
-    errorSection = `<div style="margin-top:12px"><strong>Ваша ошибка:</strong> ${escapeHtml(userInput)}</div>
-                    <div style="text-align:right;margin-top:8px"><button id="copy-error" class="btn-copy">Копировать ошибку</button></div>`;
+  const correctText = rusCombined + ' - ' + arabCombined;
+  let copySection = '';
+  if (title.includes('ошибка') || title.includes('Неправильно')) {
+    copySection = `<div style="text-align:right;margin-top:8px"><button id="copy-correct" class="btn-copy">Копировать правильный ответ</button></div>`;
   }
-  modal.innerHTML = `<div><strong>${escapeHtml(title)}</strong></div><div style="margin-top:8px">${html}</div>${errorSection}<div style="text-align:right;margin-top:12px"><button id="modal-close" class="button">Закрыть (Esc)</button></div>`;
+  modal.innerHTML = `<div><strong>${escapeHtml(title)}</strong></div><div style="margin-top:8px">${html}</div>${copySection}<div style="text-align:right;margin-top:12px"><button id="modal-close" class="button">Закрыть (Esc)</button></div>`;
   overlay.appendChild(modal);
   modalRoot.appendChild(overlay);
-  function cleanup(){ if(modalTimer){ clearTimeout(modalTimer); modalTimer=null; } document.removeEventListener('keydown', onKey); overlay.removeEventListener('click', onOverlay); const b=document.getElementById('modal-close'); if(b) b.removeEventListener('click', onBtn); const copyBtn = document.getElementById('copy-error'); if(copyBtn) copyBtn.removeEventListener('click', onCopy); if(overlay.parentNode) overlay.parentNode.removeChild(overlay); practiceInput.focus(); }
+  function cleanup(){ if(modalTimer){ clearTimeout(modalTimer); modalTimer=null; } document.removeEventListener('keydown', onKey); overlay.removeEventListener('click', onOverlay); const b=document.getElementById('modal-close'); if(b) b.removeEventListener('click', onBtn); const copyBtn = document.getElementById('copy-correct'); if(copyBtn) copyBtn.removeEventListener('click', onCopy); if(overlay.parentNode) overlay.parentNode.removeChild(overlay); practiceInput.focus(); }
   function onKey(e){ if(e.key==='Escape') onBtn(); }
   function onOverlay(e){ if(e.target===overlay) onBtn(); }
   function onBtn(){ cleanup(); if(onClose) onClose(); else showNextPractice(); }
   function onCopy() {
-    navigator.clipboard.writeText(userInput).then(() => {
-      const copyBtn = document.getElementById('copy-error');
+    navigator.clipboard.writeText(correctText).then(() => {
+      const copyBtn = document.getElementById('copy-correct');
       copyBtn.textContent = 'Скопировано!';
-      setTimeout(() => { copyBtn.textContent = 'Копировать ошибку'; }, 2000);
+      setTimeout(() => { copyBtn.textContent = 'Копировать правильный ответ'; }, 2000);
     }).catch(err => console.warn('Копирование не удалось:', err));
   }
   document.addEventListener('keydown', onKey);
   overlay.addEventListener('click', onOverlay);
   const btn = document.getElementById('modal-close'); if(btn) btn.addEventListener('click', onBtn);
-  const copyBtn = document.getElementById('copy-error'); if(copyBtn) copyBtn.addEventListener('click', onCopy);
+  const copyBtn = document.getElementById('copy-correct'); if(copyBtn) copyBtn.addEventListener('click', onCopy);
   if(autoClose) modalTimer = setTimeout(()=>{ onBtn(); }, SHOW_ANSWER_MS);
 }
 /* ---------- Практика: старт ---------- */
@@ -508,7 +504,7 @@ practiceSubmit.addEventListener('click', () => {
         currentRaw = null;
         enablePracticeControls();
         showNextPractice();
-      }, val);  // ИЗМЕНЕНО: передан userInput (val)
+      });
     } else {
       if(isOld){
         practiceOrder.unshift(currentRaw);
@@ -519,7 +515,7 @@ practiceSubmit.addEventListener('click', () => {
           practiceHistory = practiceHistory.filter(r=>r!==currentRaw);
         }
       }
-      showPracticeAnswerModal(obj, 'Неправильно', true, null, val);  // ИЗМЕНЕНО: передан userInput (val)
+      showPracticeAnswerModal(obj, 'Неправильно', true);
       currentRaw = null;
       enablePracticeControls();
     }
@@ -682,7 +678,7 @@ function closeModal(){ modalRoot.innerHTML=''; if(modalTimer){ clearTimeout(moda
   button{padding:10px 12px;border-radius:8px;border:1px solid #ccc;background:#f6f6f6;cursor:pointer}
   .btn-primary{background:#e6fff0;border-color:#b6f0c7}
   .btn-danger{background:#fff0f0;border-color:#f0b6b6}
-  .btn-copy{background:#f0f6ff;border-color:#b6c7f0} /* Новый стиль для кнопки копирования */
+  .btn-copy{background:#f0f6ff;border-color:#b6c7f0}
   .small{font-size:0.95rem;color:#666;margin-top:8px;text-align:center}
   .hidden{display:none}
   input[type="text"]{width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box}
